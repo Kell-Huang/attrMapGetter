@@ -1,0 +1,15 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+requests = ">=2.31"
+openpyxl = ">=3.1"
+playwright = ">=1.40"
+pyside6 = ">=6.6"
+
+[dev-packages]
+
+[requires]
+python_version = "3.13"

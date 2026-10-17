@@ -1,0 +1,21 @@
+# Credentials
+config/credentials.json
+pu_auth.json
+
+# Output
+output/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

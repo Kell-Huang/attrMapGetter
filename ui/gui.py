@@ -614,11 +614,7 @@ class AttrMapGetterWindow(QMainWindow):
                     f"format={ch.fmt}\n"
                     f"url={ch.url or '(none)'}",
                 )
-                if (
-                    project_intent
-                    or site_intent
-                    or ch.id in self._checked_channels
-                ):
+                if project_intent or site_intent or ch.id in self._checked_channels:
                     item.setCheckState(0, Qt.Checked)
                     self._checked_channels.add(ch.id)
                 else:
@@ -628,7 +624,7 @@ class AttrMapGetterWindow(QMainWindow):
             self._suppress_changed = False
 
         self._refresh_start_enabled()
-        
+
     @staticmethod
     def _channel_label(ch: Channel) -> str:
         tags: list[str] = []

@@ -204,7 +204,8 @@ def _write_channel_block(sheet: Worksheet, row: int, result: ChannelResult) -> i
     for attr_row in result.rows or []:
         highlight_import, highlight_inter = _orphan_flags(attr_row)
         for col, value in enumerate(attr_row, start=1):
-            cell = sheet.cell(row=row, column=col, value=value)
+            cell_value = None if value in ("", " ") else value
+            cell = sheet.cell(row=row, column=col, value=cell_value)
             cell.alignment = DATA_ALIGN
             cell.border = CELL_BORDER
             if col == 1 and highlight_import:

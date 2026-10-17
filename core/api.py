@@ -149,8 +149,7 @@ class PuApiClient:
         raw = data.get("Channels") or []
         if not isinstance(raw, list):
             raise PuHttpError(
-                f"/platform/v2/sites/{site.id}/channels: "
-                "'Channels' is not a list"
+                f"/platform/v2/sites/{site.id}/channels: " "'Channels' is not a list"
             )
 
         result: list[Channel] = []

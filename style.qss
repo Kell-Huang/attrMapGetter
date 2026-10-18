@@ -11,6 +11,15 @@ QMainWindow, QWidget#centralWidget {
     background: #F5F5F7; /* Mac-style light gray background */
 }
 
+QDialog {
+    background: #F5F5F7;
+}
+
+QTextEdit, QPlainTextEdit, QLineEdit {
+    selection-background-color: #E8E8ED;
+    selection-color: #1D1D1F;
+}
+
 /* ==============================================================================
    Header
    ============================================================================== */
@@ -43,7 +52,7 @@ QFrame[card="true"] {
     background: #FFFFFF;
     border-radius: 12px;
     /* Use a very thin border to simulate box-shadow */
-    border: 1px solid #EAEAEA; 
+    border: 1px solid #E5E5EA; 
 }
 
 QFrame[card="true"] QLabel[panelTitle="true"] {
@@ -62,6 +71,7 @@ QPushButton {
     padding: 8px 16px;
     font-weight: 500;
     border: none;
+    outline: none; /* Remove system focus dotted line */
 }
 QPushButton:hover { background-color: #333336; }
 QPushButton:pressed { background-color: #000000; }
@@ -80,6 +90,7 @@ QPushButton[flat="true"] {
     color: #86868B;
     padding: 4px 8px;
     font-weight: 500;
+    outline: none;
 }
 QPushButton[flat="true"]:hover {
     color: #1D1D1F;
@@ -135,9 +146,19 @@ QTreeWidget {
     outline: none;
 }
 
-QTreeWidget::branch {
+/* Clear default branch background to ensure custom icons are transparent */
+QTreeView::branch {
     background: transparent;
     border: none;
+    outline: none;
+}
+
+QTreeView::branch:closed:has-children {
+    image: url(ui/icons/arrow_right.svg);
+}
+
+QTreeView::branch:open:has-children {
+    image: url(ui/icons/arrow_down.svg);
 }
 
 QTreeWidget::item {
@@ -158,24 +179,33 @@ QTreeWidget::item:selected {
 }
 
 /* ==============================================================================
-   Checkbox
+   Checkbox & Tree Widget Indicators
    ============================================================================== */
 QCheckBox {
     spacing: 8px;
     color: #1D1D1F;
 }
-QCheckBox::indicator {
+
+/* Shared styles for standalone checkboxes and tree item checkboxes */
+QCheckBox::indicator, 
+QTreeView::indicator {
     width: 16px;
     height: 16px;
     border-radius: 4px;
     border: 1.5px solid #D2D2D7;
     background: #FFFFFF;
 }
-QCheckBox::indicator:checked {
-    background: #1D1D1F;
-    border: 1px solid #1D1D1F;
-    /* Ensure ui/check.svg exists in the project */
-    image: url(ui/check.svg); 
+
+QCheckBox::indicator:hover, 
+QTreeView::indicator:hover {
+    border: 1.5px solid #1D1D1F;
+}
+
+QCheckBox::indicator:checked, 
+QTreeView::indicator:checked {
+    background: #FFFFFF;
+    border: 1.5px solid #1D1D1F;
+    image: url(ui/icons/check.svg); 
 }
 
 /* ==============================================================================
@@ -184,11 +214,12 @@ QCheckBox::indicator:checked {
 #logTextEdit {
     background: #1E1E1E;
     color: #D4D4D4;
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 16px;
     font-family: "SF Mono", Consolas, "Courier New", monospace;
     font-size: 12px;
     border: none;
+    outline: none;
 }
 
 /* ==============================================================================
@@ -244,6 +275,18 @@ QProgressBar#progressBar::chunk {
 }
 
 /* ==============================================================================
+   ToolTip
+   ============================================================================== */
+QToolTip {
+    background: #1D1D1F;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+}
+
+/* ==============================================================================
    Scrollbars
    ============================================================================== */
 QScrollBar:vertical {
@@ -262,7 +305,7 @@ QScrollBar::handle:vertical:hover {
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
     height: 0px;
 }
-QScrollBar::horizontal {
+QScrollBar:horizontal {
     background: transparent;
     height: 8px;
     margin: 0px;
@@ -274,4 +317,7 @@ QScrollBar::handle:horizontal {
 }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
     width: 0px;
+}
+QScrollBar::corner {
+    background: transparent;
 }

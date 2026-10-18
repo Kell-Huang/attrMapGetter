@@ -103,6 +103,10 @@ attrMapGetter/
 │   ├── worker.py             QThread wrapper around pipeline.run
 │   ├── gui.py                PySide6 main window
 │   └── cli.py                Terminal menu
+|   └── icons/
+|       └── sliders.svg
+|       └── tree.svg
+|       └── terminal.svg       
 │
 ├── main.py                   Entry point
 ├── style.qss                 Unified stylesheet

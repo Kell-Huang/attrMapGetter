@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -50,16 +51,38 @@ APP_SUBTITLE = "Batch fetch and parse Productsup dataflow attributes"
 APP_VERSION = "v0.1.0"
 
 
-def _make_card(title: str) -> tuple[QFrame, QVBoxLayout]:
+def _make_card(title: str, icon_name: str = "") -> tuple[QFrame, QVBoxLayout]:
     card = QFrame()
     card.setProperty("card", True)
+    
     layout = QVBoxLayout(card)
-    layout.setContentsMargins(10, 8, 10, 10)
+    layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(6)
 
-    header = QLabel(title)
-    header.setProperty("panelTitle", True)
-    layout.addWidget(header)
+    # Header container
+    header_widget = QWidget()
+    header_layout = QHBoxLayout(header_widget)
+    header_layout.setContentsMargins(20, 16, 20, 8) 
+    header_layout.setSpacing(8) 
+
+    if icon_name:
+        icon_label = QLabel()
+        icon_path = Path(__file__).resolve().parent / "icons" / f"{icon_name}.svg"
+        if icon_path.exists():
+            pixmap = QIcon(str(icon_path)).pixmap(16, 16)
+            icon_label.setPixmap(pixmap)
+            icon_label.setFixedSize(16, 16)
+            icon_label.setAlignment(Qt.AlignCenter)
+            header_layout.addWidget(icon_label, 0, Qt.AlignVCenter)
+
+    title_label = QLabel(title)
+    title_label.setProperty("panelTitle", True)
+    title_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+    header_layout.addWidget(title_label, 0, Qt.AlignVCenter)
+    
+    header_layout.addStretch()
+
+    layout.addWidget(header_widget)
     return card, layout
 
 
@@ -222,7 +245,7 @@ class AttrMapGetterWindow(QMainWindow):
         self.setCentralWidget(central)
 
         root = QVBoxLayout(central)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(16, 0, 16, 16)
         root.setSpacing(0)
 
         root.addWidget(self._build_header())
@@ -235,7 +258,7 @@ class AttrMapGetterWindow(QMainWindow):
         frame = QFrame()
         frame.setObjectName("headerFrame")
         layout = QHBoxLayout(frame)
-        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setContentsMargins(20, 16, 20, 16)
         layout.setSpacing(8)
 
         title = QLabel(APP_TITLE)
@@ -273,6 +296,8 @@ class AttrMapGetterWindow(QMainWindow):
 
     def _build_splitter(self) -> QWidget:
         splitter = QSplitter(Qt.Horizontal)
+        splitter.setHandleWidth(12)
+        splitter.setStyleSheet("QSplitter::handle { background: transparent; }")
         splitter.addWidget(self._build_tree_card())
         splitter.addWidget(self._build_right_column())
         splitter.setStretchFactor(0, 55)
@@ -281,17 +306,20 @@ class AttrMapGetterWindow(QMainWindow):
         return splitter
 
     def _build_tree_card(self) -> QWidget:
-        card, layout = _make_card("Channels")
+        card, layout = _make_card("Channels", icon_name="tree")
 
         search_row = QHBoxLayout()
+        search_row.setContentsMargins(20, 0, 20, 12)
         self._search_edit = QLineEdit()
         self._search_edit.setObjectName("searchInput")
         self._search_edit.setPlaceholderText("Search by name or id ...")
-        self._search_edit.textChanged.connect(self._on_search_input)
+        self._search_edit.textChanged.connect(self._on_search_changed)
+        
         expand_btn = _make_flat_button("Expand all")
         collapse_btn = _make_flat_button("Collapse all")
         expand_btn.clicked.connect(lambda: self._tree.expandAll())
         collapse_btn.clicked.connect(lambda: self._tree.collapseAll())
+        
         search_row.addWidget(self._search_edit, 1)
         search_row.addWidget(expand_btn)
         search_row.addWidget(collapse_btn)
@@ -302,8 +330,11 @@ class AttrMapGetterWindow(QMainWindow):
         self._tree.itemExpanded.connect(self._on_item_expanded)
         self._tree.itemChanged.connect(self._on_item_changed)
 
-        hint = QLabel("Check Project, Site or Channel. Tri-state cascades both ways.")
+        hint = QLabel(
+            "Check Project, Site or Channel. Tri-state cascades both ways."
+        )
         hint.setObjectName("hintLabel")
+        hint.setContentsMargins(20, 0, 20, 16)
 
         layout.addLayout(search_row)
         layout.addWidget(self._tree, 1)
@@ -313,14 +344,18 @@ class AttrMapGetterWindow(QMainWindow):
     def _build_right_column(self) -> QWidget:
         wrapper = QWidget()
         layout = QVBoxLayout(wrapper)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         layout.addWidget(self._build_options_card())
         layout.addWidget(self._build_log_card(), 1)
         return wrapper
 
     def _build_options_card(self) -> QWidget:
-        card, layout = _make_card("Options")
+        card, layout = _make_card("Options", icon_name="sliders")
+
+        form_layout = QVBoxLayout()
+        form_layout.setContentsMargins(20, 0, 20, 16)
+        form_layout.setSpacing(12)
 
         self._refresh_check = QCheckBox("Force refresh HTML (ignore cache)")
         self._headless_check = QCheckBox("Run browser headless")
@@ -328,6 +363,7 @@ class AttrMapGetterWindow(QMainWindow):
         self._headless_check.setChecked(False)
 
         settle_row = QHBoxLayout()
+        settle_row.setSpacing(8)
         settle_label = QLabel("Settle seconds:")
         settle_label.setObjectName("sectionLabel")
         self._settle_edit = QLineEdit("15")
@@ -338,6 +374,7 @@ class AttrMapGetterWindow(QMainWindow):
         settle_row.addStretch(1)
 
         out_row = QHBoxLayout()
+        out_row.setSpacing(8)
         out_label = QLabel("Output dir:")
         out_label.setObjectName("sectionLabel")
         self._out_edit = QLineEdit("output")
@@ -348,19 +385,27 @@ class AttrMapGetterWindow(QMainWindow):
         out_row.addWidget(self._out_edit, 1)
         out_row.addWidget(browse_btn)
 
-        layout.addWidget(self._refresh_check)
-        layout.addWidget(self._headless_check)
-        layout.addLayout(settle_row)
-        layout.addLayout(out_row)
+        form_layout.addWidget(self._refresh_check)
+        form_layout.addWidget(self._headless_check)
+        form_layout.addLayout(settle_row)
+        form_layout.addLayout(out_row)
+        
+        layout.addLayout(form_layout)
         return card
 
     def _build_log_card(self) -> QWidget:
-        card, layout = _make_card("Log")
+        card, layout = _make_card("Log", icon_name="terminal")
+        
+        content_layout = QVBoxLayout()
+        content_layout.setContentsMargins(20, 0, 20, 16)
+        
         self._log_view = QPlainTextEdit()
         self._log_view.setObjectName("logTextEdit")
         self._log_view.setReadOnly(True)
         self._log_view.setMaximumBlockCount(5000)
-        layout.addWidget(self._log_view, 1)
+        
+        content_layout.addWidget(self._log_view)
+        layout.addLayout(content_layout)
         return card
 
     def _build_status_bar(self) -> QWidget:

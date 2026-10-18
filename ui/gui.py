@@ -7,41 +7,20 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import (
-    QApplication,
-    QCheckBox,
-    QDialog,
-    QDialogButtonBox,
-    QFileDialog,
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QMainWindow,
-    QMessageBox,
-    QPlainTextEdit,
-    QProgressBar,
-    QPushButton,
-    QSplitter,
-    QTreeWidget,
-    QTreeWidgetItem,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog,
+                               QDialogButtonBox, QFileDialog, QFrame,
+                               QHBoxLayout, QLabel, QLineEdit, QMainWindow,
+                               QMessageBox, QPlainTextEdit, QProgressBar,
+                               QPushButton, QSplitter, QTreeWidget,
+                               QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from core import api as pu_api
 from core import session as pu_session
 from core.credentials import CredentialsError, load_credentials, redact_token
-from core.models import (
-    SETTLE_MAX,
-    SETTLE_MIN,
-    Channel,
-    PipelineOptions,
-    Project,
-    Selection,
-    Site,
-)
-from core.pipeline import STAGE_DONE, STAGE_FETCHING, STAGE_PARSING, STAGE_WRITING
+from core.models import (SETTLE_MAX, SETTLE_MIN, Channel, PipelineOptions,
+                         Project, Selection, Site)
+from core.pipeline import (STAGE_DONE, STAGE_FETCHING, STAGE_PARSING,
+                           STAGE_WRITING)
 from core.reporter import ERRORS_FILENAME
 
 from .worker import PipelineWorker
@@ -54,7 +33,7 @@ APP_VERSION = "v0.1.0"
 def _make_card(title: str, icon_name: str = "") -> tuple[QFrame, QVBoxLayout]:
     card = QFrame()
     card.setProperty("card", True)
-    
+
     layout = QVBoxLayout(card)
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(6)
@@ -62,8 +41,8 @@ def _make_card(title: str, icon_name: str = "") -> tuple[QFrame, QVBoxLayout]:
     # Header container
     header_widget = QWidget()
     header_layout = QHBoxLayout(header_widget)
-    header_layout.setContentsMargins(20, 16, 20, 8) 
-    header_layout.setSpacing(8) 
+    header_layout.setContentsMargins(20, 16, 20, 8)
+    header_layout.setSpacing(8)
 
     if icon_name:
         icon_label = QLabel()
@@ -79,7 +58,7 @@ def _make_card(title: str, icon_name: str = "") -> tuple[QFrame, QVBoxLayout]:
     title_label.setProperty("panelTitle", True)
     title_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
     header_layout.addWidget(title_label, 0, Qt.AlignVCenter)
-    
+
     header_layout.addStretch()
 
     layout.addWidget(header_widget)
@@ -314,12 +293,12 @@ class AttrMapGetterWindow(QMainWindow):
         self._search_edit.setObjectName("searchInput")
         self._search_edit.setPlaceholderText("Search by name or id ...")
         self._search_edit.textChanged.connect(self._on_search_changed)
-        
+
         expand_btn = _make_flat_button("Expand all")
         collapse_btn = _make_flat_button("Collapse all")
         expand_btn.clicked.connect(lambda: self._tree.expandAll())
         collapse_btn.clicked.connect(lambda: self._tree.collapseAll())
-        
+
         search_row.addWidget(self._search_edit, 1)
         search_row.addWidget(expand_btn)
         search_row.addWidget(collapse_btn)
@@ -330,9 +309,7 @@ class AttrMapGetterWindow(QMainWindow):
         self._tree.itemExpanded.connect(self._on_item_expanded)
         self._tree.itemChanged.connect(self._on_item_changed)
 
-        hint = QLabel(
-            "Check Project, Site or Channel. Tri-state cascades both ways."
-        )
+        hint = QLabel("Check Project, Site or Channel. Tri-state cascades both ways.")
         hint.setObjectName("hintLabel")
         hint.setContentsMargins(20, 0, 20, 16)
 
@@ -389,21 +366,21 @@ class AttrMapGetterWindow(QMainWindow):
         form_layout.addWidget(self._headless_check)
         form_layout.addLayout(settle_row)
         form_layout.addLayout(out_row)
-        
+
         layout.addLayout(form_layout)
         return card
 
     def _build_log_card(self) -> QWidget:
         card, layout = _make_card("Log", icon_name="terminal")
-        
+
         content_layout = QVBoxLayout()
         content_layout.setContentsMargins(20, 0, 20, 16)
-        
+
         self._log_view = QPlainTextEdit()
         self._log_view.setObjectName("logTextEdit")
         self._log_view.setReadOnly(True)
         self._log_view.setMaximumBlockCount(5000)
-        
+
         content_layout.addWidget(self._log_view)
         layout.addLayout(content_layout)
         return card

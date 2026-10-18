@@ -306,6 +306,7 @@ class AttrMapGetterWindow(QMainWindow):
         self._tree = QTreeWidget()
         self._tree.setHeaderHidden(True)
         self._tree.setUniformRowHeights(True)
+        self._tree.setIndentation(16)
         self._tree.itemExpanded.connect(self._on_item_expanded)
         self._tree.itemChanged.connect(self._on_item_changed)
 
@@ -389,11 +390,8 @@ class AttrMapGetterWindow(QMainWindow):
         frame = QFrame()
         frame.setObjectName("statusBarFrame")
         layout = QHBoxLayout(frame)
-        layout.setContentsMargins(12, 6, 12, 6)
-        layout.setSpacing(10)
-
-        self._status_label = QLabel("Ready")
-        self._status_label.setObjectName("statusLabel")
+        layout.setContentsMargins(20, 10, 20, 10)
+        layout.setSpacing(12)
 
         self._progress_bar = QProgressBar()
         self._progress_bar.setObjectName("progressBar")
@@ -408,7 +406,6 @@ class AttrMapGetterWindow(QMainWindow):
         self._status_value.setObjectName("statusValue")
         self._status_value.setProperty("status", "ready")
 
-        layout.addWidget(self._status_label)
         layout.addWidget(self._progress_bar, 1)
         layout.addWidget(self._progress_label)
         layout.addWidget(self._status_value)

@@ -146,19 +146,22 @@ QTreeWidget {
     outline: none;
 }
 
-/* Clear default branch background to ensure custom icons are transparent */
+/* Clear default branch background and constrain width to reduce gap */
 QTreeView::branch {
     background: transparent;
     border: none;
     outline: none;
+    width: 16px; 
 }
 
 QTreeView::branch:closed:has-children {
     image: url(ui/icons/arrow_right.svg);
+    padding-left: 4px;
 }
 
 QTreeView::branch:open:has-children {
     image: url(ui/icons/arrow_down.svg);
+    padding-left: 4px;
 }
 
 QTreeWidget::item {
@@ -194,6 +197,11 @@ QTreeView::indicator {
     border-radius: 4px;
     border: 1.5px solid #D2D2D7;
     background: #FFFFFF;
+}
+
+/* Pull the tree checkbox closer to the expand/collapse arrow */
+QTreeView::indicator {
+    margin-left: -4px; 
 }
 
 QCheckBox::indicator:hover, 

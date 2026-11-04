@@ -8,6 +8,8 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
+from attInvestigator import ColumnFilterBuilder
+
 from .models import ChannelResult
 
 HEADER_6 = [
@@ -86,27 +88,6 @@ def write_reports(
     results: list[ChannelResult],
     out_dir: Path | str,
 ) -> list[Path]:
-    """
-    Write one .xlsx per successful channel into out_dir.
-
-    - Filename: {sanitized channel_name}__{timestamp}.xlsx. The
-      timestamp suffix guarantees that repeated runs never overwrite
-      each other. Within a single run, name collisions get an extra
-      '__{channel_id}' before the timestamp.
-    - Sheet name: sanitized channel_name (<= 31 chars).
-    - Failed channels do not produce their own file; they are collected
-      in _errors.xlsx. _errors.xlsx has no timestamp and is overwritten
-      on every run that has failures, so it always reflects the latest
-      batch.
-
-    Returns the list of written report paths (excluding _errors.xlsx).
-
-    Raises ReportError when a workbook cannot be written. Removing a
-    stale _errors.xlsx on the success path is best-effort: a deletion
-    failure (for example, the file is open in Excel) is silently
-    ignored, because the batch itself succeeded and the leftover file
-    does not affect the new reports.
-    """
     try:
         directory = out_dir if isinstance(out_dir, Path) else Path(out_dir)
     except TypeError as exc:
@@ -128,17 +109,38 @@ def write_reports(
     used_filenames: set[str] = set()
 
     for result in succeeded:
+        # Organize output files into subfolders by project name
+        raw_project = result.selection.project_name or "unknown_project"
+        safe_project = _sanitize_filename(raw_project, "unknown_project")
+
+        project_dir = directory / safe_project
+        try:
+            project_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise ReportError(
+                f"cannot create project directory {project_dir}: {exc}"
+            ) from exc
+
         base = _sanitize_filename(
             result.selection.channel_name,
             result.selection.channel_id,
         )
         unique = _unique_filename(base, result.selection.channel_id, used_filenames)
-        out_path = directory / f"{unique}__{timestamp}.xlsx"
+
+        out_path = project_dir / f"{unique}__{timestamp}.xlsx"
         _write_single_channel(out_path, result)
         written.append(out_path)
 
     if failed:
+        # _errors.xlsx remains at the root of the reports directory
         _write_errors_file(directory / ERRORS_FILENAME, failed)
+    else:
+        stale = directory / ERRORS_FILENAME
+        try:
+            if stale.exists():
+                stale.unlink()
+        except OSError:
+            pass
 
     return written
 
@@ -159,6 +161,53 @@ def _write_single_channel(out_path: Path, result: ChannelResult) -> None:
     sheet.freeze_panes = "A3"
 
     _write_channel_block(sheet, 1, result)
+
+    # Generate additional cleanup sheets if export data exists
+    if result.has_export:
+        try:
+            ColumnFilterBuilder(result.rows, include_invalid=False).write(wb)
+
+            # Append Site ID and Channel ID to "Allow Columns" sheet
+            for sheet_name in ("Allow Columns", "Allow Column Filter"):
+                if sheet_name not in wb.sheetnames:
+                    continue
+                allow_sheet = wb[sheet_name]
+                last_col_idx = allow_sheet.max_column + 1
+
+                header_font = Font(color="FFFFFF", bold=True)
+                header_fill = PatternFill(
+                    start_color="1F4E78", end_color="1F4E78", fill_type="solid"
+                )
+                wrap_align = Alignment(vertical="center", wrap_text=True)
+
+                cell_site = allow_sheet.cell(
+                    row=1, column=last_col_idx, value="Site ID"
+                )
+                cell_chan = allow_sheet.cell(
+                    row=1, column=last_col_idx + 1, value="Channel ID"
+                )
+
+                for cell in (cell_site, cell_chan):
+                    cell.font = header_font
+                    cell.fill = header_fill
+                    cell.alignment = wrap_align
+
+                allow_sheet.cell(
+                    row=2, column=last_col_idx, value=result.selection.site_id
+                ).alignment = wrap_align
+                allow_sheet.cell(
+                    row=2, column=last_col_idx + 1, value=result.selection.channel_id
+                ).alignment = wrap_align
+
+                allow_sheet.column_dimensions[get_column_letter(last_col_idx)].width = (
+                    15
+                )
+                allow_sheet.column_dimensions[
+                    get_column_letter(last_col_idx + 1)
+                ].width = 15
+
+        except Exception as e:
+            print(f"[WARN] Failed to generate cleanup sheets: {e}")
 
     try:
         wb.save(out_path)

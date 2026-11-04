@@ -1,6 +1,7 @@
 import os
 import re
 import time
+from collections import defaultdict
 from datetime import datetime
 from html import unescape
 from pathlib import Path
@@ -375,6 +376,214 @@ class ExportParser:
             )
 
         return result
+
+
+class ColumnFilterBuilder:
+    """Generate the 'Allow Column Filter' sheet based on strict business rules."""
+
+    def __init__(self, rows: list, include_invalid: bool = True):
+        self.rows = rows
+        self.include_invalid = include_invalid
+
+    def write(self, wb) -> None:
+        sheet = wb.create_sheet("Allow Column Filter")
+        sheet.append(
+            [
+                "Data Source",
+                "Keep Active?",
+                "Import Attributes",
+                "Reason",
+                "Merged Columns",
+            ]
+        )
+
+        header_font = Font(color="FFFFFF", bold=True)
+        header_fill = PatternFill(
+            start_color="1F4E78", end_color="1F4E78", fill_type="solid"
+        )
+        red_font = Font(color="FF0000")
+        missing_fill = PatternFill(
+            start_color="FCE4EC", end_color="FCE4EC", fill_type="solid"
+        )
+        copy_fill = PatternFill(
+            start_color="E3F2FD", end_color="E3F2FD", fill_type="solid"
+        )
+        pause_fill = PatternFill(
+            start_color="FFE0B2", end_color="FFE0B2", fill_type="solid"
+        )
+        wrap_top_align = Alignment(wrap_text=True, vertical="top")
+
+        all_sources = set()
+        source_details = defaultdict(
+            lambda: {
+                "valid": defaultdict(set),
+                "invalid": defaultdict(set),
+                "is_missing": False,
+            }
+        )
+
+        invalid_reason_text = "not connected to any export or no skip/blacklist/whitelist rules in intermediate stage"
+
+        for row in self.rows:
+            import_attr = str(row[0]) if len(row) > 0 and row[0] is not None else ""
+            inter_rule = str(row[1]) if len(row) > 1 and row[1] is not None else ""
+            export_attr = str(row[4]) if len(row) > 4 and row[4] is not None else ""
+            note = str(row[5]) if len(row) > 5 and row[5] is not None else ""
+
+            if not import_attr.strip() or import_attr == "[Column not defined]":
+                continue
+
+            has_export = (
+                bool(export_attr.strip()) and export_attr != "[Column not defined]"
+            )
+
+            active_skip_rules = set()
+            if inter_rule:
+                for line_text in inter_rule.split("\n"):
+                    if (
+                        re.search(r"Skip|Whitelist|Blacklist", line_text, re.IGNORECASE)
+                        and "Paused" not in line_text
+                    ):
+                        clean_rule = re.sub(r"^\d+\.", "", line_text.strip())
+                        active_skip_rules.add(clean_rule)
+
+            reasons = set()
+            if has_export:
+                reasons.add("Reaches Export")
+            for rule in active_skip_rules:
+                reasons.add(rule)
+
+            is_valid = bool(reasons)
+
+            if note in ("Missing Source", " "):
+                names = ["Missing Source"]
+            else:
+                names = [part.strip() for part in note.split(";") if part.strip()]
+
+            for name in names:
+                all_sources.add(name)
+                if name == "Missing Source":
+                    source_details[name]["is_missing"] = True
+
+                if is_valid:
+                    for r in reasons:
+                        source_details[name]["valid"][import_attr].add(r)
+                    source_details[name]["invalid"].pop(import_attr, None)
+                else:
+                    if import_attr not in source_details[name]["valid"]:
+                        source_details[name]["invalid"][import_attr].add(
+                            invalid_reason_text
+                        )
+
+        for cell in sheet[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+
+        def source_sort_key(s):
+            is_yes = (not source_details[s]["is_missing"]) and bool(
+                source_details[s]["valid"]
+            )
+            return (0 if is_yes else 1, s.lower())
+
+        sorted_sources = sorted(all_sources, key=source_sort_key)
+
+        # Phase 1: Write all YES rows (Global)
+        written_sources = set()
+        for source in sorted_sources:
+            details = source_details[source]
+            if details["is_missing"]:
+                continue
+
+            valid_attrs = sorted(details["valid"].keys())
+            if not valid_attrs:
+                continue
+
+            merged_str = "\n".join(valid_attrs)
+            first_row = True
+
+            for attr in valid_attrs:
+                reason_str = "\n".join(sorted(details["valid"][attr]))
+                sheet.append(
+                    [source, "Yes", attr, reason_str, merged_str if first_row else ""]
+                )
+                row_idx = sheet.max_row
+
+                if merged_str and first_row:
+                    cell = sheet.cell(row=row_idx, column=5)
+                    cell.fill = copy_fill
+                    cell.alignment = wrap_top_align
+                    first_row = False
+            written_sources.add(source)
+
+        # Phase 2: Full output mode
+        if self.include_invalid:
+            for source in sorted_sources:
+                details = source_details[source]
+                is_missing = details["is_missing"]
+
+                valid_attrs = (
+                    [] if source in written_sources else sorted(details["valid"].keys())
+                )
+                invalid_attrs = sorted(details["invalid"].keys())
+
+                merged_str = "\n".join(valid_attrs) if valid_attrs else ""
+                first_row = True
+
+                for attr in valid_attrs:
+                    reason_str = "\n".join(sorted(details["valid"][attr]))
+                    sheet.append(
+                        [
+                            source,
+                            "No",
+                            attr,
+                            reason_str,
+                            merged_str if first_row else "",
+                        ]
+                    )
+                    row_idx = sheet.max_row
+
+                    if merged_str and first_row:
+                        cell = sheet.cell(row=row_idx, column=5)
+                        cell.fill = copy_fill
+                        cell.alignment = wrap_top_align
+                        first_row = False
+
+                    if is_missing:
+                        for c in range(1, 6):
+                            sheet.cell(row=row_idx, column=c).fill = missing_fill
+
+                for attr in invalid_attrs:
+                    reason_str = "\n".join(sorted(details["invalid"][attr]))
+                    sheet.append([source, "No", attr, reason_str, ""])
+                    row_idx = sheet.max_row
+                    sheet.cell(row=row_idx, column=3).font = red_font
+                    if is_missing:
+                        for c in range(1, 6):
+                            sheet.cell(row=row_idx, column=c).fill = missing_fill
+
+        # Phase 3: Clean mode - append Pause List
+        else:
+            pause_sources = []
+            for source in sorted_sources:
+                details = source_details[source]
+                is_yes = (not details["is_missing"]) and bool(details["valid"])
+                if not is_yes:
+                    pause_sources.append(source)
+
+            if pause_sources:
+                for source in pause_sources:
+                    sheet.append([source, "No", "*(Pause this source)*", "", ""])
+                    row_idx = sheet.max_row
+                    for c in range(1, 6):
+                        sheet.cell(row=row_idx, column=c).fill = pause_fill
+
+        sheet.column_dimensions["A"].width = 45
+        sheet.column_dimensions["B"].width = 15
+        sheet.column_dimensions["C"].width = 40
+        sheet.column_dimensions["D"].width = 55
+        sheet.column_dimensions["E"].width = 60
+        sheet.freeze_panes = "A2"
 
 
 class AttrInvestigator:
@@ -885,9 +1094,15 @@ class AttrInvestigator:
         sheet.append(self.sheet_header_6 if self.has_export else self.sheet_header_4)
 
         for row in self.complete_attrs:
-            sheet.append(row)
+            cleaned_row = [None if str(val).strip() == "" else val for val in row]
+            sheet.append(cleaned_row)
 
         self.format_excel(sheet)
+
+        # create "Allow Column Filter" Sheet
+
+        if self.has_export:
+            ColumnFilterBuilder(self.complete_attrs, include_invalid=False).write(wb)
 
         if self.report_file_name:
             saved_file_name = f"{self.report_file_name}.xlsx"

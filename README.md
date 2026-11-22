@@ -123,4 +123,4 @@ attrMapGetter/
 ```
 ### 😖say good byeeeeee to tedious investigationnnnnnn
 
-### Please remember that pip -m install requirements.txt!!!
+### Please remember that python -m pip install requirements.txt!!!

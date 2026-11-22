@@ -4,7 +4,7 @@ Batch-fetch and parse Productsup dataflow attributes into one Excel
 workbook per channel.
 
 Pipeline: **select project/site/channel → fetch iframe HTML → parse
-attributes → write per-channel reports**.
+attributes (plus Twig references) → write per-channel reports**.
 
 ---
 
@@ -45,10 +45,11 @@ attributes → write per-channel reports**.
 │ core/pipeline.py orchestrator │
 │ ├─ calls fetcher.fetch_many() │
 │ ├─ calls parser.parse_html() (per channel) │
+│ ├─ calls twig.apply_one() (per channel) │
 │ └─ calls reporter.write_reports() │
 │ │
 │ core/fetcher.py Playwright │
-│ - launches msedge once per batch │
+│ - launches one msedge per worker thread (3 concurrent) │
 │ - waits for source/intermediate/export markers │
 │ - dumps iframe HTML to output/html/slimedit_{cid}.txt │
 │ - honours cancel_event between channels and retries │
@@ -56,6 +57,10 @@ attributes → write per-channel reports**.
 │ core/parser.py thin wrapper around attInvestigator │
 │ - bypasses AttrInvestigator.get_cur_dir() input() │
 │ - returns (rows, has_export) │
+│ │
+│ core/twig.py Text Template references │
+│ - fetches intermediate / export focus pages │
+│ - appends rows for Twig-referenced attributes │
 │ │
 │ core/reporter.py openpyxl │
 │ - one .xlsx per successful channel │
@@ -68,6 +73,8 @@ attributes → write per-channel reports**.
 │ - 401/403 → PuAuthError, others → PuHttpError │
 │ │
 │ core/credentials.py load config/credentials.json │
+│ core/session.py headed Edge login │
+│ - saves storage_state to pu_auth.json │
 │ core/models.py dataclasses + constants │
 └───────────────────────────────┬──────────────────────────────────────┘
 │ HTTP / filesystem / subprocess
@@ -78,49 +85,54 @@ attributes → write per-channel reports**.
 │ Productsup REST API platform.productsup.com │
 │ Productsup dataflow iframe dataflow.productsup.com │
 │ Microsoft Edge (Playwright) headless or headed │
-│ pu_auth.json storage_state from pu_login.py │
+│ pu_auth.json storage_state from the GUI login flow │
 └──────────────────────────────────────────────────────────────────────
 ```
 ### Directory structure
 ```text
 attrMapGetter/
-├── pu_login.py               One-time login helper
 ├── attInvestigator.py        Attribute parser engine
-├── export_selector.py        API reference
 │
 ├── core/                     UI-agnostic functional layer
 │   ├── __init__.py
 │   ├── models.py             Dataclasses + shared constants
 │   ├── credentials.py        Reads config/credentials.json
 │   ├── api.py                Productsup REST client
+│   ├── session.py            Headed Edge login, writes pu_auth.json
 │   ├── fetcher.py            Playwright iframe fetcher
 │   ├── parser.py             Thin wrapper around attInvestigator
+│   ├── twig.py               Text Template reference resolver
 │   ├── reporter.py           Excel report writer
-│   └── pipeline.py           fetch → parse → report orchestration
+│   └── pipeline.py           fetch → parse → twig → report orchestration
 │
 ├── ui/                       Interaction layer
 │   ├── __init__.py
 │   ├── worker.py             QThread wrapper around pipeline.run
 │   ├── gui.py                PySide6 main window
-│   └── cli.py                Terminal menu
-|   └── icons/
-|       └── sliders.svg
-|       └── tree.svg
-|       └── terminal.svg       
+│   ├── cli.py                Terminal menu
+│   └── icons/
+│       ├── arrow_down.svg
+│       ├── arrow_right.svg
+│       ├── check.svg
+│       ├── sliders.svg
+│       ├── terminal.svg
+│       └── tree.svg
 │
 ├── main.py                   Entry point
 ├── style.qss                 Unified stylesheet
 │
 ├── config/
 │   └── credentials.json      API token + both hosts
-├── pu_auth.json              Created by pu_login.py
+├── pu_auth.json              Created by the GUI login flow
 └── output/
     ├── html/
-    │   └── slimedit_{channel_id}.txt      Per-channel HTML cache
+    │   └── slimedit_{channel_id}.txt          Per-channel HTML cache
+    ├── cache/
+    │   └── twig/{channel_id}.json             Per-channel Twig cache
     └── reports/
-        ├── {name}__{timestamp}.xlsx       One file per successful channel
-        └── _errors.xlsx                   Only when some channels failed
+        ├── {project}/{name}__{timestamp}.xlsx One file per successful channel
+        └── _errors.xlsx                       Only when some channels failed
 ```
 ### 😖say good byeeeeee to tedious investigationnnnnnn
 
-### Please remember that python -m pip install requirements.txt!!!
+### Please remember to run `python -m pip install -r requirements.txt` first.

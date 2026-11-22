@@ -5,6 +5,7 @@ from pathlib import Path
 
 from core import api as pu_api
 from core import pipeline
+from core import twig
 from core.credentials import CredentialsError, load_credentials, redact_token
 from core.models import Channel, PipelineOptions, Project, Selection, Site
 from core.reporter import ERRORS_FILENAME
@@ -191,7 +192,13 @@ def _on_result(result) -> None:
     else:
         rows = len(result.rows or [])
         cols = 6 if result.has_export else 4
-        print(f"      -> {rows} rows, {cols} cols")
+        # Twig rows are appended after this callback, so say so explicitly.
+        note = (
+            " (twig refs not included)"
+            if twig.has_text_template(result.rows)
+            else ""
+        )
+        print(f"      -> {rows} rows, {cols} cols{note}")
 
 
 def run(opts: PipelineOptions | None = None) -> int:
@@ -268,7 +275,7 @@ def run(opts: PipelineOptions | None = None) -> int:
     print("=" * 60)
     print(f"Done: {succeeded} succeeded, {failed} failed.")
     if report_paths:
-        print(f"Reports: {reports_dir}  ({len(report_paths)} file(s))")
+        print(f"Reports: {reports_dir}  ({len(report_paths)} file(s) in subfolders)")
     if failed > 0:
         print(f"Errors:  {reports_dir / ERRORS_FILENAME}")
     print("=" * 60)

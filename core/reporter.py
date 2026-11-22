@@ -250,14 +250,19 @@ def _write_channel_block(sheet: Worksheet, row: int, result: ChannelResult) -> i
     sheet.row_dimensions[row].height = ROW_HEIGHT_HEADER
     row += 1
 
-    for attr_row in result.rows or []:
+    for index, attr_row in enumerate(result.rows or []):
+        is_twig_row = index in result.twig_rows
         highlight_import, highlight_inter = _orphan_flags(attr_row)
         for col, value in enumerate(attr_row, start=1):
             cell_value = None if value in ("", " ") else value
             cell = sheet.cell(row=row, column=col, value=cell_value)
             cell.alignment = DATA_ALIGN
             cell.border = CELL_BORDER
-            if col == 1 and highlight_import:
+            if is_twig_row:
+                # Rows added by core.twig (Text Template references).
+                cell.fill = GREEN_FILL
+                cell.font = DATA_FONT
+            elif col == 1 and highlight_import:
                 cell.fill = PURPLE_FILL
                 cell.font = DATA_WHITE_FONT
             elif col == 3 and highlight_inter:

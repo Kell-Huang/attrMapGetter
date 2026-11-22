@@ -4,7 +4,7 @@ import threading
 from pathlib import Path
 from typing import Callable
 
-from . import fetcher, parser, reporter
+from . import fetcher, parser, reporter, twig
 from .models import ChannelResult, PipelineOptions, Selection
 
 STAGE_FETCHING = "fetching"
@@ -69,6 +69,12 @@ def run(
     if on_stage:
         on_stage(STAGE_PARSING)
     _run_parse(selections, results_by_cid, on_result, cancel_event)
+
+    # -- twig enrichment -------------------------------------------------
+    # Additive: appends rows for Text Template references. Runs inside the
+    # parsing stage so the set of stage names the UI knows stays unchanged.
+    if opts.twig_enabled:
+        _run_twig(selections, results_by_cid, opts, cancel_event)
 
     # -- write -----------------------------------------------------------
     if on_stage:
@@ -185,6 +191,28 @@ def _run_parse(
 
         if on_result:
             on_result(res)
+
+
+def _run_twig(
+    selections: list[Selection],
+    results_by_cid: dict[str, ChannelResult],
+    opts: PipelineOptions,
+    cancel_event: threading.Event | None,
+) -> None:
+    """
+    Resolve Text Template Twig references and append the missing rows.
+
+    Purely additive: a channel that fails here keeps the rows produced by
+    the parser, so report generation is unaffected.
+    """
+    auth_file = Path("pu_auth.json")
+    for sel in selections:
+        if _is_cancelled(cancel_event):
+            return
+        res = results_by_cid[sel.channel_id]
+        if res.error is not None or not res.rows:
+            continue
+        twig.apply_one(res, opts, auth_file, cancel_event)
 
 
 def _is_cancelled(cancel_event: threading.Event | None) -> bool:

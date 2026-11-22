@@ -7,20 +7,42 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog,
-                               QDialogButtonBox, QFileDialog, QFrame,
-                               QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-                               QMessageBox, QPlainTextEdit, QProgressBar,
-                               QPushButton, QSplitter, QTreeWidget,
-                               QTreeWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QSplitter,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from core import api as pu_api
 from core import session as pu_session
+from core import twig
 from core.credentials import CredentialsError, load_credentials, redact_token
-from core.models import (SETTLE_MAX, SETTLE_MIN, Channel, PipelineOptions,
-                         Project, Selection, Site)
-from core.pipeline import (STAGE_DONE, STAGE_FETCHING, STAGE_PARSING,
-                           STAGE_WRITING)
+from core.models import (
+    SETTLE_MAX,
+    SETTLE_MIN,
+    Channel,
+    PipelineOptions,
+    Project,
+    Selection,
+    Site,
+)
+from core.pipeline import STAGE_DONE, STAGE_FETCHING, STAGE_PARSING, STAGE_WRITING
 from core.reporter import ERRORS_FILENAME
 
 from .worker import PipelineWorker
@@ -205,6 +227,7 @@ class AttrMapGetterWindow(QMainWindow):
         self._search_timer.timeout.connect(self._flush_search)
         self._api_workers: list[QThread] = []
         self._worker: PipelineWorker | None = None
+        self._fetching_worker: bool = False
         # Directory the running worker actually writes to. Captured at
         # Start time so callbacks read the same value even if the user
         # edits the Options card mid-run.
@@ -876,23 +899,83 @@ class AttrMapGetterWindow(QMainWindow):
 
     def _refresh_start_enabled(self) -> None:
         has_creds = self._client is not None
-        has_selection = bool(self._collect_selections())
-        not_running = self._worker is None
+        # Prevent clicking Start during pipeline OR during the background API fetch
+        not_running = (self._worker is None) and (not self._fetching_worker)
         logged_in = self._session_ok
+
+        has_selection = bool(self._collect_selections())
+        if not has_selection:
+            root = self._tree.invisibleRootItem()
+
+            def _has_checked_container(parent):
+                for i in range(parent.childCount()):
+                    child = parent.child(i)
+                    info = child.data(0, Qt.UserRole) or {}
+                    if info.get("type") in ("project", "site"):
+                        if child.checkState(0) == Qt.Checked:
+                            return True
+                    if _has_checked_container(child):
+                        return True
+                return False
+
+            has_selection = _has_checked_container(root)
+
         enabled = has_creds and has_selection and not_running and logged_in
         self._start_button.setEnabled(enabled)
-        if not logged_in:
-            self._start_button.setToolTip("Please log in to Productsup first.")
-        else:
+
+        if enabled:
             self._start_button.setToolTip("")
+        elif not logged_in:
+            self._start_button.setToolTip("Please log in to Productsup first.")
+        elif not has_selection:
+            self._start_button.setToolTip(
+                "Please check at least one channel, site, or project first."
+            )
+        elif not not_running:
+            self._start_button.setToolTip("A pipeline is already running.")
+        else:
+            self._start_button.setToolTip(
+                "API client is not ready; check credentials.json."
+            )
 
     def _on_start_clicked(self) -> None:
+
+        # Prevent double-clicks from starting multiple workers
+        if self._worker is not None or self._fetching_worker:
+            return
+
         selections = self._collect_selections()
-        if not selections:
+
+        unloaded_sites = []
+        unloaded_projects = []
+
+        root = self._tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            proj_item = root.child(i)
+            proj_info = proj_item.data(0, Qt.UserRole) or {}
+            if proj_info.get("type") != "project":
+                continue
+
+            if proj_item.checkState(0) == Qt.Checked and not proj_info.get("loaded"):
+                unloaded_projects.append(proj_info.get("data"))
+                continue
+
+            for j in range(proj_item.childCount()):
+                site_item = proj_item.child(j)
+                site_info = site_item.data(0, Qt.UserRole) or {}
+                if site_info.get("type") == "site":
+                    if site_item.checkState(0) == Qt.Checked and not site_info.get(
+                        "loaded"
+                    ):
+                        unloaded_sites.append(
+                            (site_info.get("data"), proj_info.get("data"))
+                        )
+
+        if not selections and not unloaded_projects and not unloaded_sites:
             QMessageBox.information(
                 self,
                 "No channels",
-                "Please check at least one channel first.",
+                "Please check at least one channel, site, or project first.",
             )
             return
 
@@ -903,6 +986,88 @@ class AttrMapGetterWindow(QMainWindow):
             settle_seconds=self._settle_seconds(),
         )
         self._active_reports_dir = opts.report_dir
+
+        self._start_button.setEnabled(False)
+        self._cancel_button.setEnabled(True)
+        self._set_status_value("Fetching channels...", "running")
+
+        if unloaded_projects or unloaded_sites:
+            self._log("INFO", "Fetching channels for unloaded nodes...")
+            self._fetching_worker = True
+            fetch_worker = _ApiWorker(
+                self._fetch_unloaded_selections,
+                selections,
+                unloaded_projects,
+                unloaded_sites,
+            )
+            fetch_worker.loaded.connect(
+                lambda final_selections: self._begin_pipeline(final_selections, opts)
+            )
+            fetch_worker.failed.connect(self._on_fetch_channels_failed)
+            fetch_worker.finished.connect(
+                lambda w=fetch_worker: self._release_worker(w)
+            )
+            self._api_workers.append(fetch_worker)
+            fetch_worker.start()
+        else:
+            self._begin_pipeline(selections, opts)
+
+    def _fetch_unloaded_selections(
+        self, current_sels, unloaded_projects, unloaded_sites
+    ) -> list:
+        """Helper called in a background thread to fetch missing channels."""
+        if self._client is None:
+            raise RuntimeError("API client is not initialized.")
+
+        existing_ids = {s.channel_id for s in current_sels}
+
+        for project in unloaded_projects:
+            sites = self._client.list_sites(project.id)
+            for site in sites:
+                channels = self._client.list_channels(site, project)
+                for ch in channels:
+                    self._channel_cache[ch.id] = ch
+                    if ch.id not in existing_ids:
+                        current_sels.append(ch.to_selection(self._dataflow_base_url))
+                        existing_ids.add(ch.id)
+
+        for site, project in unloaded_sites:
+            channels = self._client.list_channels(site, project)
+            for ch in channels:
+                self._channel_cache[ch.id] = ch
+                if ch.id not in existing_ids:
+                    current_sels.append(ch.to_selection(self._dataflow_base_url))
+                    existing_ids.add(ch.id)
+
+        return current_sels
+
+    def _on_fetch_channels_failed(self, error_msg: str) -> None:
+        """Restore UI state if the background API fetch fails."""
+
+        self._fetching_worker = False
+
+        self._log("ERROR", f"Failed to fetch unloaded nodes: {error_msg}")
+        self._set_status_value("Fetch failed", "error")
+        self._start_button.setEnabled(True)
+        self._cancel_button.setEnabled(False)
+        QMessageBox.warning(
+            self, "Fetch Error", f"Failed to load channels:\n{error_msg}"
+        )
+
+    def _begin_pipeline(
+        self, selections: list[Selection], opts: PipelineOptions
+    ) -> None:
+        """Start the actual pipeline after selections are finalized."""
+        self._fetching_worker = False
+
+        if not selections:
+            self._start_button.setEnabled(True)
+            self._cancel_button.setEnabled(False)
+            self._set_status_value("Ready", "ready")
+            QMessageBox.information(
+                self, "No channels", "No channels found to process."
+            )
+            return
 
         self._log_view.clear()
         self._progress_bar.setValue(0)
@@ -923,8 +1088,6 @@ class AttrMapGetterWindow(QMainWindow):
         self._worker.failed.connect(self._on_failed)
         self._worker.finished.connect(self._on_worker_finished)
 
-        self._start_button.setEnabled(False)
-        self._cancel_button.setEnabled(True)
         self._worker.start()
 
     # -- login ---------------------------------------------------------
@@ -1079,9 +1242,16 @@ class AttrMapGetterWindow(QMainWindow):
         else:
             rows = len(result.rows or [])
             cols = 6 if result.has_export else 4
+            # Twig rows are appended after this callback, so say so explicitly.
+            note = (
+                " (twig refs not included)"
+                if twig.has_text_template(result.rows)
+                else ""
+            )
             self._log(
                 "INFO",
-                f"{sel.channel_name} ({sel.channel_id}): " f"{rows} rows, {cols} cols",
+                f"{sel.channel_name} ({sel.channel_id}): "
+                f"{rows} rows, {cols} cols{note}",
             )
 
     def _on_succeeded(self, results, report_paths) -> None:
@@ -1092,21 +1262,19 @@ class AttrMapGetterWindow(QMainWindow):
             f"Pipeline done: {succeeded} succeeded / {failed} failed.",
         )
 
-        reports_dir: Path | None = None
+        reports_dir = (
+            self._active_reports_dir
+            if self._active_reports_dir is not None
+            else Path(self._out_edit.text().strip() or "output") / "reports"
+        )
+
         if report_paths:
-            reports_dir = report_paths[0].parent
             self._log(
                 "INFO",
-                f"Reports: {reports_dir}  ({len(report_paths)} file(s))",
-            )
-        elif failed > 0:
-            reports_dir = (
-                self._active_reports_dir
-                if self._active_reports_dir is not None
-                else Path(self._out_edit.text().strip() or "output") / "reports"
+                f"Reports: {reports_dir}  ({len(report_paths)} file(s) in subfolders)",
             )
 
-        if failed > 0 and reports_dir is not None:
+        if failed > 0:
             error_file = reports_dir / ERRORS_FILENAME
             self._log(
                 "WARNING",
@@ -1115,9 +1283,6 @@ class AttrMapGetterWindow(QMainWindow):
 
         self._set_status_value(f"Done ({succeeded}/{len(results)})", "done")
 
-        # Auth failures -> offer re-login, skip the completion popup.
-        # 403/401 from a dataflow fetch is a per-channel error, so it
-        # lands in _on_succeeded, not _on_failed.
         auth_failures = [
             r
             for r in results
@@ -1142,16 +1307,19 @@ class AttrMapGetterWindow(QMainWindow):
                 self._on_login_clicked()
                 return
 
-        # Normal completion popup.
         if report_paths:
-            msg = f"{len(report_paths)} report file(s) written to:\n" f"{reports_dir}"
+            msg = (
+                f"{len(report_paths)} report file(s) written to:\n"
+                f"{reports_dir}\n\n"
+                f"(Files are organized in subfolders by project)"
+            )
             if failed > 0:
                 msg += (
                     f"\n\n{failed} channel(s) failed. "
-                    f"See {ERRORS_FILENAME} in the same directory."
+                    f"See {ERRORS_FILENAME} in the root directory."
                 )
             QMessageBox.information(self, "Reports ready", msg)
-        elif failed > 0 and reports_dir is not None:
+        elif failed > 0:
             QMessageBox.warning(
                 self,
                 "All channels failed",

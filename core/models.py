@@ -115,6 +115,9 @@ class ChannelResult:
     rows: list[list[str]] | None = None
     has_export: bool = False
     error: str | None = None
+    # Indexes into `rows` that were added by core.twig (Text Template
+    # references). Empty when the channel has no Text Template rules.
+    twig_rows: set[int] = field(default_factory=set)
 
     def __setattr__(self, name: str, value: object) -> None:
         # Guard: selection must not be replaced after construction.
@@ -139,11 +142,18 @@ class PipelineOptions:
     settle_seconds: int = 15
     max_retries: int = 1
     retry_wait: float = 2.0
+    # Resolve Text Template Twig references (adds focus-page requests).
+    twig_enabled: bool = True
 
     @property
     def html_dir(self) -> Path:
         """Where slimedit_{channel_id}.txt cache files live."""
         return self.out_dir / "html"
+
+    @property
+    def twig_cache_dir(self) -> Path:
+        """Where per-channel Twig template caches live."""
+        return self.out_dir / "cache" / "twig"
 
     @property
     def report_dir(self) -> Path:

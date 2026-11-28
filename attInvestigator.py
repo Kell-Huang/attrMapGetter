@@ -1073,15 +1073,17 @@ class AttrInvestigator:
                 )
 
             if len(complete_attr) >= 4:
-                complete_attr[-1] = re.sub(
-                    "&amp;amp;",
-                    "&",
-                    re.sub(
-                        "&lt;br/&gt;Additional - ",
-                        ";",
-                        complete_attr[-1],
-                    ),
-                )
+                note = complete_attr[-1]
+                if "&" in note:
+                    for _ in range(3):
+                        decoded = unescape(note)
+                        if decoded == note:
+                            break
+                        note = decoded
+                    note = note.replace(
+                        "<br/>Additional - ", ";"
+                    ).replace("&lt;br/&gt;Additional - ", ";")
+                complete_attr[-1] = note
 
     def save_file(self):
         """Save the complete attributes to an Excel file with the format
